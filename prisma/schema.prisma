@@ -1,0 +1,115 @@
+// Insurimple-ARS backend schema. Mirrors the @insurimple/contracts domain; the
+// canonical risk (auto | property) is stored as JSON because it is Zod-defined in
+// contracts and validated at the edge. Every tenant-scoped table carries tenant_id
+// and is protected by Postgres RLS (see prisma/rls.sql).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id         String      @id
+  name       String
+  households Household[]
+  policies   Policy[]
+  shops      QuoteShop[]
+  results    QuoteResult[]
+  renewals   RenewalTransaction[]
+
+  @@map("tenant")
+}
+
+model Household {
+  id             String   @id
+  tenantId       String   @map("tenant_id")
+  code           String
+  displayName    String   @map("display_name")
+  email          String?
+  phone          String?
+  primaryContact Json     @map("primary_contact") // NamedInsured shape
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  policies       Policy[]
+
+  @@index([tenantId])
+  @@map("household")
+}
+
+model Policy {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  householdId   String    @map("household_id")
+  policyNumber  String    @map("policy_number")
+  line          String // 'auto' | 'property'
+  carrier       String
+  status        String // 'in_force' | 'renewed' | 'lapsed'
+  effectiveDate DateTime  @map("effective_date")
+  expiresOn     DateTime  @map("expires_on")
+  risk          Json // canonical AutoRisk | PropertyRisk payload
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  household     Household @relation(fields: [householdId], references: [id])
+
+  @@index([tenantId])
+  @@index([householdId])
+  @@map("policy")
+}
+
+model QuoteShop {
+  id          String        @id @default(uuid())
+  tenantId    String        @map("tenant_id")
+  householdId String        @map("household_id")
+  policyRef   String?       @map("policy_ref")
+  purpose     String // 'new_business' | 'remarket' | 'renewal_shop'
+  requestedBy String        @map("requested_by")
+  riskRef     Json          @map("risk_ref") // { riskId, version }
+  createdAt   DateTime      @default(now()) @map("created_at")
+  tenant      Tenant        @relation(fields: [tenantId], references: [id])
+  results     QuoteResult[]
+
+  @@index([tenantId])
+  @@map("quote_shop")
+}
+
+model QuoteResult {
+  id                String    @id @default(uuid())
+  tenantId          String    @map("tenant_id")
+  shopId            String    @map("shop_id")
+  carrierId         String    @map("carrier_id")
+  carrierName       String    @map("carrier_name")
+  source            String // 'portal' | 'rater' | 'manual' | 'api'
+  outcome           String // 'quoted' | 'referral' | 'declined'
+  provenance        String // 'indicative' | 'firm'
+  premiumCents      Int?      @map("premium_cents")
+  coverageVariant   String?   @map("coverage_variant")
+  declineReason     String?   @map("decline_reason")
+  respondedAt       DateTime  @map("responded_at")
+  presentedToClient Boolean   @default(false) @map("presented_to_client")
+  simulated         Boolean   @default(false)
+  tenant            Tenant    @relation(fields: [tenantId], references: [id])
+  shop              QuoteShop @relation(fields: [shopId], references: [id])
+
+  @@index([tenantId])
+  @@index([shopId])
+  @@map("quote_result")
+}
+
+model RenewalTransaction {
+  id                   String   @id @default(uuid())
+  tenantId             String   @map("tenant_id")
+  policyRef            String   @map("policy_ref")
+  householdId          String   @map("household_id")
+  line                 String
+  expiringPremiumCents Int      @map("expiring_premium_cents")
+  effectiveDate        DateTime @map("effective_date")
+  status               String // 'due' | 'shopping' | 'completed'
+  shopId               String?  @map("shop_id")
+  outcome              Json? // RemarketOutcome shape
+  tenant               Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("renewal_transaction")
+}

@@ -1,0 +1,33 @@
+{
+  "name": "insurimple-ars-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Insurimple-ARS backend — NestJS + PostgreSQL BMS API (party / policy / renewal / quote_shop / quote_results). Tenant-isolated via Postgres RLS.",
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:rls": "psql \"$DATABASE_URL\" -f prisma/rls.sql",
+    "seed": "ts-node prisma/seed.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.4",
+    "@nestjs/config": "^3.2.3",
+    "@nestjs/core": "^10.4.4",
+    "@nestjs/platform-express": "^10.4.4",
+    "@prisma/client": "^5.20.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.5",
+    "@types/express": "^5.0.0",
+    "@types/node": "^20.14.0",
+    "prisma": "^5.20.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
