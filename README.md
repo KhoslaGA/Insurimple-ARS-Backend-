@@ -5,6 +5,10 @@ party / policy / renewal / `quote_shop` / `quote_results` data that the `apps/bm
 (in [KhoslaGA/Insurimple-ARS](https://github.com/KhoslaGA/Insurimple-ARS)) will consume.
 Tenant-isolated via Postgres Row-Level Security.
 
+> **Project state, priorities, and gotchas live in
+> [`CONTEXT.md`](https://github.com/KhoslaGA/Insurimple-ARS/blob/main/CONTEXT.md) in the
+> frontend repo.** Read it before starting work — it covers both repos.
+
 ## Domain
 
 Mirrors `@insurimple/contracts`. The canonical risk (auto | property) is stored as JSON and
