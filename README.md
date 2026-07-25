@@ -20,6 +20,20 @@ validated at the contracts edge; every tenant-scoped table carries `tenant_id`.
 | GET | `/renewals` | the renewal queue |
 | GET | `/shops/:id/results` | quote results for a shop |
 
+## Endpoints (Phase 2 — write)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/shops` | open a shop (one risk version → N carriers) |
+| POST | `/shops/:id/results` | record a carrier's quote / referral / decline |
+| POST | `/renewals/:id/outcome` | record a remarket outcome; computes the saved premium |
+
+Write bodies are validated with zod at the trust boundary — the server re-checks the same
+`quote_result` invariants the domain enforces (quoted ⟹ premium; a decline / referral ⟹ a
+reason and no premium; a simulated result is never firm), because it must not trust the
+client. There is deliberately **no bind / issue endpoint** — recording a quote or a remarket
+decision never crosses into binding a policy.
+
 All scoped endpoints require an `x-tenant-id` header (Phase 2 replaces this with the Clerk
 org claim — tenant context must come from the verified token, never a request param). The
 tenant flows into RLS through `PrismaService.forTenant`, which sets `app.current_tenant`
@@ -41,8 +55,10 @@ owners bypass RLS).
 
 ## Status
 
-- **Phase 1 (this repo):** scaffold + Prisma schema + RLS + read endpoints + seed —
-  compile-verified. Live DB / RLS / pgTAP isolation tests run in an environment with Postgres.
-- **Phase 2 (next):** Clerk auth + tenant context; write endpoints (open shop, record
-  result, record remarket outcome); and the typed API client in `@insurimple/contracts`
-  that `apps/bms` swaps its mock spine for.
+- **Phase 1:** scaffold + Prisma schema + RLS + read endpoints + seed — compile-verified.
+- **Phase 2 (this update):** write endpoints (open shop, record result, record remarket
+  outcome), zod-validated at the trust boundary; and the typed API client in
+  `@insurimple/contracts` (read + write) that `apps/bms` swaps its mock spine for.
+  Compile-verified — live DB / RLS / pgTAP isolation tests run in an environment with Postgres.
+- **Phase 2 (remaining):** Clerk auth + tenant context — the tenant must come from the
+  verified org claim, replacing the `x-tenant-id` header.
