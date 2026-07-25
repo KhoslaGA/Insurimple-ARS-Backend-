@@ -1,0 +1,81 @@
+name: backend-ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: insurimple
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Migrations + fixtures run as the OWNER; the API and the isolation suite run as a
+      # NON-owner, because FORCE ROW LEVEL SECURITY is bypassed by table owners.
+      DATABASE_URL: postgresql://ars_owner:ownerpw@localhost:5432/insurimple?schema=public
+      APP_DATABASE_URL: postgresql://ars_app:apppw@localhost:5432/insurimple?schema=public
+      APP_DB_ROLE: ars_app
+      PGPASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Provision database roles
+        # Neither role is a superuser — a superuser would bypass RLS entirely and the
+        # isolation suite below would prove nothing.
+        run: |
+          psql -h localhost -U postgres -d insurimple -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE ars_owner LOGIN PASSWORD 'ownerpw';
+          CREATE ROLE ars_app   LOGIN PASSWORD 'apppw';
+          ALTER DATABASE insurimple OWNER TO ars_owner;
+          ALTER SCHEMA public OWNER TO ars_owner;
+          SQL
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Apply RLS policies and grants
+        run: npm run prisma:rls
+
+      - name: Seed
+        # Also a regression guard on the deploy path: the seed must set app.current_tenant,
+        # since FORCE RLS applies to the owner too.
+        run: npm run seed
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: RLS tenant-isolation suite
+        # The gate that matters: a cross-tenant leak must never reach main.
+        run: npm test

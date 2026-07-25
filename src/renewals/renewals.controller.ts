@@ -9,11 +9,39 @@ import { RecordOutcomeSchema } from './dto';
 export class RenewalsController {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * The renewal queue, each row carrying the display fields the queue actually shows:
+   * the household's name and the incumbent carrier. Those live on `household` / `policy`,
+   * so they are joined here rather than leaving the UI to render raw ids. Both lookups are
+   * inside the same tenant-scoped transaction, so RLS covers them too.
+   */
   @Get()
   async list(@TenantId() tenantId: string) {
-    return this.prisma.forTenant(tenantId, (tx) =>
-      tx.renewalTransaction.findMany({ orderBy: { effectiveDate: 'asc' } }),
-    );
+    return this.prisma.forTenant(tenantId, async (tx) => {
+      const renewals = await tx.renewalTransaction.findMany({ orderBy: { effectiveDate: 'asc' } });
+      if (renewals.length === 0) return [];
+
+      const [households, policies] = await Promise.all([
+        tx.household.findMany({
+          where: { id: { in: [...new Set(renewals.map((r) => r.householdId))] } },
+          select: { id: true, displayName: true },
+        }),
+        tx.policy.findMany({
+          where: { policyNumber: { in: [...new Set(renewals.map((r) => r.policyRef))] } },
+          select: { policyNumber: true, carrier: true },
+        }),
+      ]);
+
+      const nameById = new Map(households.map((h) => [h.id, h.displayName]));
+      const carrierByPolicy = new Map(policies.map((p) => [p.policyNumber, p.carrier]));
+
+      return renewals.map((r) => ({
+        ...r,
+        // Null when the related record isn't in this tenant — the client falls back, never guesses.
+        householdName: nameById.get(r.householdId) ?? null,
+        incumbentCarrier: carrierByPolicy.get(r.policyRef) ?? null,
+      }));
+    });
   }
 
   /**

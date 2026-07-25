@@ -55,10 +55,27 @@ owners bypass RLS).
 
 ## Status
 
-- **Phase 1:** scaffold + Prisma schema + RLS + read endpoints + seed — compile-verified.
-- **Phase 2 (this update):** write endpoints (open shop, record result, record remarket
-  outcome), zod-validated at the trust boundary; and the typed API client in
-  `@insurimple/contracts` (read + write) that `apps/bms` swaps its mock spine for.
-  Compile-verified — live DB / RLS / pgTAP isolation tests run in an environment with Postgres.
-- **Phase 2 (remaining):** Clerk auth + tenant context — the tenant must come from the
-  verified org claim, replacing the `x-tenant-id` header.
+- **Phase 1:** scaffold + Prisma schema + RLS + read endpoints + seed.
+- **Phase 2:** write endpoints (open shop, record result, record remarket outcome),
+  zod-validated at the trust boundary; the typed API client in `@insurimple/contracts`
+  (read + write) that `apps/bms` swaps its mock spine for; versioned migrations; CI.
+- **Verified against a live Postgres 16**, not just compiled: migrations apply, RLS
+  isolation holds as the non-owner role (6/6 in `test/rls.isolation.spec.ts`), the seed
+  runs, and the API serves the seeded household / policies / renewals / quote results to
+  `apps/bms` end to end.
+- **Remaining:** Clerk auth + tenant context — the tenant must come from the verified org
+  claim, replacing the `x-tenant-id` header. Then background job processing for carrier
+  adapters (see below).
+
+## Scaling notes
+
+The data volume is modest — even at 100k clients this is a few million rows, which one
+Postgres instance handles comfortably. The load-bearing concerns are elsewhere:
+
+- **Carrier adapters must become background jobs.** Portal/API quotes take seconds to
+  minutes, are rate-limited, and fail often; running them inside an HTTP request will not
+  survive real volume. The `CarrierAdapter` seam means this is a swap behind an interface,
+  not a rewrite. Needs retries, timeouts, idempotency, and per-carrier concurrency caps.
+- **Isolation is verified, not assumed** — the RLS suite runs on every commit in CI.
+- **Quote evidence is append-only**: the app role is granted SELECT/INSERT/UPDATE but not
+  DELETE, so Take-All-Comers history can't be erased by application code.

@@ -59,49 +59,63 @@ const propertyRisk = {
   interests: [{ id: 'int-1', type: 'mortgagee', name: 'First Dominion Bank', reference: 'FD-88213307' }],
 };
 
+const results = [
+  { id: 'shop-okonkwo-1-MM', carrierId: 'MM', carrierName: 'Maple Mutual', source: 'manual', outcome: 'quoted', provenance: 'firm', premiumCents: 320400, coverageVariant: 'AUTO — $1M TPL, $1,000 collision/comp', presentedToClient: true, simulated: false, respondedAt: new Date('2026-06-15T11:40:00.000Z') },
+  { id: 'shop-okonkwo-1-TN', carrierId: 'TN', carrierName: 'True North P&C', source: 'portal', outcome: 'quoted', provenance: 'firm', premiumCents: 346000, coverageVariant: 'AUTO — bundled with home', presentedToClient: true, simulated: false, respondedAt: new Date('2026-06-15T11:41:00.000Z') },
+  { id: 'shop-okonkwo-1-CG', carrierId: 'CG', carrierName: 'Cascadia General', source: 'api', outcome: 'declined', provenance: 'firm', declineReason: 'Not writing this driver profile in the GTA this quarter.', presentedToClient: false, simulated: false, respondedAt: new Date('2026-06-15T11:39:00.000Z') },
+];
+
+const renewals = [
+  { id: 'ren-okonkwo', policyRef: 'A21677149PLA', householdId: 'OKONKA01', line: 'auto', expiringPremiumCents: 360000 },
+  { id: 'ren-tremblay', policyRef: 'H55231887HAB', householdId: 'TREMBL02', line: 'property', expiringPremiumCents: 185000 },
+  { id: 'ren-boychuk', policyRef: 'C88120043CON', householdId: 'BOYCHU03', line: 'property', expiringPremiumCents: 98000 },
+];
+
 async function main(): Promise<void> {
+  // `tenant` carries no tenant_id and no RLS policy — seed it outside the scoped transaction.
   await prisma.tenant.upsert({ where: { id: TENANT }, update: {}, create: { id: TENANT, name: 'KLC Group' } });
 
-  await prisma.household.upsert({
-    where: { id: 'OKONKA01' },
-    update: {},
-    create: { id: 'OKONKA01', tenantId: TENANT, code: 'OKONKA01', displayName: 'Amara Okonkwo & Daniel Mensah', email: 'amara.okonkwo@email.ca', phone: '(647) 555-0182', primaryContact: json(namedInsured) },
-  });
+  // Every tenant-scoped table has FORCE ROW LEVEL SECURITY, and FORCE applies to the table
+  // OWNER too — so the seed must set app.current_tenant exactly like PrismaService.forTenant
+  // does at runtime. Without it these inserts fail with "new row violates row-level security
+  // policy for table ..." (Postgres 42501), even connected as the owner.
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant', ${TENANT}, true)`;
 
-  await prisma.policy.upsert({
-    where: { id: 'pol-okonkwo-auto' },
-    update: {},
-    create: { id: 'pol-okonkwo-auto', tenantId: TENANT, householdId: 'OKONKA01', policyNumber: 'A21677149PLA', line: 'auto', carrier: 'True North P&C', status: 'in_force', effectiveDate: new Date('2025-12-24'), expiresOn: new Date('2026-12-24'), risk: json(autoRisk) },
-  });
-  await prisma.policy.upsert({
-    where: { id: 'pol-okonkwo-home' },
-    update: {},
-    create: { id: 'pol-okonkwo-home', tenantId: TENANT, householdId: 'OKONKA01', policyNumber: 'H55231887HAB', line: 'property', carrier: 'Laurier Insurance', status: 'in_force', effectiveDate: new Date('2025-12-24'), expiresOn: new Date('2026-12-24'), risk: json(propertyRisk) },
-  });
+      await tx.household.upsert({
+        where: { id: 'OKONKA01' },
+        update: {},
+        create: { id: 'OKONKA01', tenantId: TENANT, code: 'OKONKA01', displayName: 'Amara Okonkwo & Daniel Mensah', email: 'amara.okonkwo@email.ca', phone: '(647) 555-0182', primaryContact: json(namedInsured) },
+      });
 
-  await prisma.quoteShop.upsert({
-    where: { id: 'shop-okonkwo-1' },
-    update: {},
-    create: { id: 'shop-okonkwo-1', tenantId: TENANT, householdId: 'OKONKA01', purpose: 'new_business', requestedBy: 'user-rina', riskRef: json({ riskId: 'risk-auto-1', version: 1 }), createdAt: new Date('2026-06-15T11:42:00.000Z') },
-  });
+      await tx.policy.upsert({
+        where: { id: 'pol-okonkwo-auto' },
+        update: {},
+        create: { id: 'pol-okonkwo-auto', tenantId: TENANT, householdId: 'OKONKA01', policyNumber: 'A21677149PLA', line: 'auto', carrier: 'True North P&C', status: 'in_force', effectiveDate: new Date('2025-12-24'), expiresOn: new Date('2026-12-24'), risk: json(autoRisk) },
+      });
+      await tx.policy.upsert({
+        where: { id: 'pol-okonkwo-home' },
+        update: {},
+        create: { id: 'pol-okonkwo-home', tenantId: TENANT, householdId: 'OKONKA01', policyNumber: 'H55231887HAB', line: 'property', carrier: 'Laurier Insurance', status: 'in_force', effectiveDate: new Date('2025-12-24'), expiresOn: new Date('2026-12-24'), risk: json(propertyRisk) },
+      });
 
-  const results = [
-    { id: 'shop-okonkwo-1-MM', carrierId: 'MM', carrierName: 'Maple Mutual', source: 'manual', outcome: 'quoted', provenance: 'firm', premiumCents: 320400, coverageVariant: 'AUTO — $1M TPL, $1,000 collision/comp', presentedToClient: true, simulated: false, respondedAt: new Date('2026-06-15T11:40:00.000Z') },
-    { id: 'shop-okonkwo-1-TN', carrierId: 'TN', carrierName: 'True North P&C', source: 'portal', outcome: 'quoted', provenance: 'firm', premiumCents: 346000, coverageVariant: 'AUTO — bundled with home', presentedToClient: true, simulated: false, respondedAt: new Date('2026-06-15T11:41:00.000Z') },
-    { id: 'shop-okonkwo-1-CG', carrierId: 'CG', carrierName: 'Cascadia General', source: 'api', outcome: 'declined', provenance: 'firm', declineReason: 'Not writing this driver profile in the GTA this quarter.', presentedToClient: false, simulated: false, respondedAt: new Date('2026-06-15T11:39:00.000Z') },
-  ];
-  for (const r of results) {
-    await prisma.quoteResult.upsert({ where: { id: r.id }, update: {}, create: { ...r, tenantId: TENANT, shopId: 'shop-okonkwo-1' } });
-  }
+      await tx.quoteShop.upsert({
+        where: { id: 'shop-okonkwo-1' },
+        update: {},
+        create: { id: 'shop-okonkwo-1', tenantId: TENANT, householdId: 'OKONKA01', purpose: 'new_business', requestedBy: 'user-rina', riskRef: json({ riskId: 'risk-auto-1', version: 1 }), createdAt: new Date('2026-06-15T11:42:00.000Z') },
+      });
 
-  const renewals = [
-    { id: 'ren-okonkwo', policyRef: 'A21677149PLA', householdId: 'OKONKA01', line: 'auto', expiringPremiumCents: 360000 },
-    { id: 'ren-tremblay', policyRef: 'H55231887HAB', householdId: 'TREMBL02', line: 'property', expiringPremiumCents: 185000 },
-    { id: 'ren-boychuk', policyRef: 'C88120043CON', householdId: 'BOYCHU03', line: 'property', expiringPremiumCents: 98000 },
-  ];
-  for (const r of renewals) {
-    await prisma.renewalTransaction.upsert({ where: { id: r.id }, update: {}, create: { ...r, tenantId: TENANT, effectiveDate: new Date('2026-12-24'), status: 'due' } });
-  }
+      for (const r of results) {
+        await tx.quoteResult.upsert({ where: { id: r.id }, update: {}, create: { ...r, tenantId: TENANT, shopId: 'shop-okonkwo-1' } });
+      }
+
+      for (const r of renewals) {
+        await tx.renewalTransaction.upsert({ where: { id: r.id }, update: {}, create: { ...r, tenantId: TENANT, effectiveDate: new Date('2026-12-24'), status: 'due' } });
+      }
+    },
+    { timeout: 30_000 },
+  );
 }
 
 main()
